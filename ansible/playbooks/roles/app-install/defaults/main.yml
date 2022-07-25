@@ -1,0 +1,4 @@
+#nfs_ip: 192.168.99.102
+nfs_ip: 10.0.1.12
+nfs_path: "/nfs"
+pvc_path: "/nfs/data"

@@ -1,0 +1,39 @@
+- name: Install packages for nfs server
+  ansible.builtin.dnf:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - nfs-utils
+    - net-tools
+
+- name: Enable nfs service
+  ansible.builtin.systemd:
+    name: nfs-server
+    state: started
+    enabled: yes
+
+- name: Create nfs folder
+  file:
+    path: "{{ nfs_path }}"
+    mode: 0777
+    state: directory 
+
+- name: Update export file for nfs server
+  template:
+    src: "etc/exports.j2"
+    dest: "/etc/exports"
+    owner: root
+    group: root
+    mode: 0644
+  notify: "restart nfs-server"
+
+- name: Add firewall rules
+  ansible.posix.firewalld:
+    service: "{{ item }}"
+    permanent: yes
+    state: enabled 
+  with_items:
+    - nfs
+    - rpc-bind
+    - mountd
+  notify: "restart firewalld"

@@ -1,0 +1,10 @@
+---
+- hosts: master,workers
+  become: true
+  #vars:
+  #  azureenv: "false" 
+  roles:
+   - k8-install
+
+
+

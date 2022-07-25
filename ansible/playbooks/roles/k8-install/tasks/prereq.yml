@@ -1,0 +1,20 @@
+- name: Install chronyd
+  ansible.builtin.dnf:
+    name: chrony
+    state: present
+
+- name: Enable chronyd service
+  ansible.builtin.systemd:
+    name: chronyd
+    state: started
+    enabled: yes
+
+- name: Install packages for nfs
+  ansible.builtin.dnf:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - nfs-utils
+    - nfs4-acl-tools
+    - wget
+

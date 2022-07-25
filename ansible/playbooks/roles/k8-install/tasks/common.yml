@@ -1,0 +1,93 @@
+---
+- name: Enable firewalld service
+  ansible.builtin.systemd:
+    name: firewalld
+    state: started
+    enabled: yes
+
+- name: Modprobe br_netfilter
+  community.general.modprobe:
+    name: br_netfilter
+    state: present
+
+- name: Add firewall rules
+  ansible.posix.firewalld:
+    masquerade: yes
+    permanent: yes
+    state: enabled
+  notify: "restart firewalld"
+
+- name: Allow k8 to manage firewall
+  copy:
+    src: "k8s.conf"
+    dest: "/etc/sysctl.d/k8s.conf"
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Reload sysctl 
+  shell: sysctl --system
+
+- name: Disable swap for current session
+  command: swapoff -a
+
+- name: Disable swap permanently
+  replace:
+    path: /etc/fstab
+    regexp: '^(\s*)([^#\n]+\s+)(\w+\s+)swap(\s+.*)$'
+    replace: '#\1\2\3swap\4'
+    backup: yes
+
+- name: Download kubic repo
+  get_url:
+    url: "https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/CentOS_8_Stream/devel:kubic:libcontainers:stable.repo"
+    dest: "/etc/yum.repos.d/devel:kubic:libcontainers:stable.repo"
+
+- name: Download crio1.24 repo
+  get_url:
+    url: "https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/1.24/CentOS_8_Stream/devel:kubic:libcontainers:stable:cri-o:1.24.repo"
+    dest: "/etc/yum.repos.d/devel:kubic:libcontainers:stable:cri-o:1.24:1.24.repo"
+
+- name: Copy Crio config
+  copy:
+    src: "crio.conf"
+    dest: "/etc/modules-load.d/crio.conf"
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Install crio
+  ansible.builtin.dnf:
+    name: cri-o
+    state: present
+
+- name: Enable cri-o service
+  ansible.builtin.systemd:
+    name: crio
+    state: started
+    enabled: yes
+
+- name: Copy kubernetes repo
+  copy:
+    src: "kubernetes.repo"
+    dest: "/etc/yum.repos.d/kubernetes.repo"
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Install kubernetes packages
+  ansible.builtin.dnf:
+    name: "{{ item }}"
+    state: present
+    disable_excludes: kubernetes
+  with_items:
+    - kubelet
+    - kubeadm
+    - kubectl
+
+- name: Enable kubelet service
+  ansible.builtin.systemd:
+    name: kubelet
+    state: started
+    enabled: yes
+

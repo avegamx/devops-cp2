@@ -1,0 +1,120 @@
+---
+
+- name: Create nfs folder
+  file:
+    path: "{{ nfs_path }}"
+    mode: 0777
+    state: directory
+
+- name: Create folder for persistant volume
+  file:
+    path: "{{ pvc_path }}"
+    mode: 0777
+    state: directory
+
+
+- name: Mount nfs filesystem
+  command: "mount -t nfs {{ nfs_ip }}:/srv/nfs {{ nfs_path }}" 
+
+- name: Copy pvc file
+  template:
+    src: pv-volume.yml
+    dest: "{{ nfs_path }}"
+
+
+- name: Copy prometheus app
+  copy:
+    src: "{{ item }}"
+    dest: "{{ nfs_path }}"
+    mode: 0644
+  with_items:
+    - prometheus-service.yaml
+    - prometheus-ingress.yaml
+    - config-map.yaml
+    - clusterRole.yaml 
+    - prometheus-deployment.yaml
+    - pv-claim.yml
+
+- name: Create namespace 
+  command: "kubectl create namespace monitoring"
+  ignore_errors: yes
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+  when: "'master'in group_names"
+
+- name: Create persistent volume
+  command: "kubectl apply -f {{ nfs_path }}/pv-volume.yml"
+  ignore_errors: yes
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+  when: "'master'in group_names"
+
+- name: Create persistent volume claim
+  command: "kubectl apply -f {{ nfs_path }}/pv-claim.yml"
+  ignore_errors: yes
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+  when: "'master'in group_names"
+
+
+- name: Create role
+  command: "kubectl create -f {{ nfs_path }}/clusterRole.yaml"
+  ignore_errors: yes
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+  when: "'master'in group_names"
+
+- name: Create config map
+  command: "kubectl create -f {{ nfs_path }}/config-map.yaml"
+  ignore_errors: yes
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+  when: "'master'in group_names"
+
+
+- name: Create a deployment on monitoring namespace
+  command: "kubectl create -f {{ nfs_path }}/prometheus-deployment.yaml" 
+  ignore_errors: yes
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+  when: "'master'in group_names"
+
+- name: Get PodName for app
+  command: kubectl get pods --namespace=monitoring
+  register: podname_output
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+  when: "'master'in group_names"
+
+
+- name: Get app pod name
+  set_fact:
+    podname: "{{ podname_output.stdout | regex_search(regexp) }}"
+  vars:
+    regexp: 'prometheus[^\s]*'
+
+- name: Do port mapping
+  shell: "kubectl port-forward {{ podname }} 8080:9090 -n monitoring  &"
+  ignore_errors: yes
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+  when: "'master'in group_names"
+
+- name: Add firewall rules for app
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+  with_items:
+    - "8080/tcp"
+    - "9090/tcp"
+    - "30000/tcp"
+  notify: "restart firewalld"
+
+- name: Create the service
+  command: "kubectl create -f {{ nfs_path }}/prometheus-service.yaml --namespace=monitoring"
+  ignore_errors: yes
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+  when: "'master'in group_names"
+

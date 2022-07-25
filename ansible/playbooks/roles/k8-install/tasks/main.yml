@@ -1,0 +1,29 @@
+---
+
+- name: Display azureenv value
+  ansible.builtin.debug:
+    var: azureenv
+  tags: debugvars
+
+
+- import_tasks: prereq.yml
+  tags: prereq
+
+- import_tasks: common.yml
+  tags: common
+
+- import_tasks: master.yml
+  when: "'master'in group_names"
+  tags: master
+
+- import_tasks: workers.yml
+  when: "'workers'in group_names"
+  tags: worker
+
+  #- name: Debug variable init
+  #ansible.builtin.debug:
+  #  var: init_output
+  #tags: debugvars
+
+  #- import_tasks: kk.yml
+  #tags: test

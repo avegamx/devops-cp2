@@ -1,0 +1,114 @@
+---
+
+- name: Display azureenv value
+  ansible.builtin.debug:
+    var: azureenv
+  tags: debugvars
+
+
+- name: Add firewall rules for workers
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+  with_items:
+    - "6443/tcp"
+    - "2379-2380/tcp"
+    - "10250-10252/tcp"
+    - "10255/tcp"
+  notify: "restart firewalld"
+
+
+- name: Config kubeadm
+  command: kubeadm config images pull
+
+
+- name: Add firewall rules for workers
+  ansible.posix.firewalld:
+    rich_rule: "{{ item }}"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  with_items:
+    - "rule family=ipv4 source address=192.168.99.100/32 accept"
+    - "rule family=ipv4 source address=192.168.99.101/32 accept"
+    - "rule family=ipv4 source address=192.168.99.102/32 accept"
+  notify: "restart firewalld"
+
+
+- name: Initialize the Kubernetes cluster using kubeadm
+  command: "kubeadm init --pod-network-cidr 192.169.0.0/16 {{ kubeinit_params }}"
+  ignore_errors: yes
+  register: init_output
+  tags: initk8master
+
+
+- name: Parse init output 1
+  set_fact:
+    joincommand1: "{{ init_output.stdout | regex_search(regexp) }}"
+  vars:
+    regexp: 'kubeadm join[^\\]*'
+
+- name: Parse init output 2
+  set_fact:
+    joincommand2: "{{ init_output.stdout | regex_search(regexp) }}"
+  vars:
+    regexp: '--discovery-token.*'
+
+
+- name: Install Tigera 
+  command: kubectl create -f https://docs.projectcalico.org/manifests/tigera-operator.yaml
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+  ignore_errors: yes 
+  when: azureenv == "false"
+
+- name: Copy custom-resources
+  copy:
+    src: "custom-resources.yaml"
+    dest: "/etc/kubernetes/custom-resources.yaml"
+    owner: root
+    group: root
+    mode: 0644
+  when: azureenv == "false"
+
+- name: Install Calico
+  command: kubectl apply -f /etc/kubernetes/custom-resources.yaml
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+  when: azureenv == "false"
+
+
+- name: Add firewall rules for azure
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+  with_items:
+    - "8285/udp"
+    - "8472/udp"
+  notify: "restart firewalld"
+  when: azureenv == "true"
+
+- name: Install Calico in azure 
+  command: kubectl apply -f https://docs.projectcalico.org/manifests/canal.yaml
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+  ignore_errors: yes
+  when: azureenv == "true"
+
+- name: Deploy ingress controller
+  command: kubectl apply -f https://raw.githubusercontent.com/haproxytech/kubernetes-ingress/master/deploy/haproxy-ingress.yaml
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+
+- name: Fix calico pending status 
+  command: "kubectl taint nodes --all node-role.kubernetes.io/control-plane-"
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+
+- name: Fix ha pending status
+  command: "kubectl taint nodes --all node-role.kubernetes.io/master-"
+  environment:
+    KUBECONFIG: '/etc/kubernetes/admin.conf'
+

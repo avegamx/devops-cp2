@@ -1,0 +1,31 @@
+---
+
+- name: Add firewall rules for workers
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+  with_items:
+    - "10250/tcp"
+    - "30000-32767/tcp"
+  notify: "restart firewalld"
+
+- name: Set joincommand as local variable
+  set_fact:
+    joincommand: "{{ hostvars['vm1'].joincommand1 }} {{ hostvars['vm1'].joincommand2 }}" 
+    #joincommand: "{{ hostvars[item].joincommand1 }} {{ hostvars[item].joincommand2 }}"
+    #with_items: "{{ groups['master'] }}"
+
+
+- name: Join worker to the cluster
+  command: "{{ joincommand }}"
+
+  #- name: print variable
+  #debug:
+  #  msg: "{{ hostvars[groups['master']].joincommand }}"
+
+
+- name: print variable
+  debug:
+    var: "hostvars[item].joincommand"
+  with_items: "{{ groups['master'] }}"

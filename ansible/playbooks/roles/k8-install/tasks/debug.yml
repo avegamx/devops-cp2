@@ -1,0 +1,5 @@
+- name: Display azureenv value
+  ansible.builtin.debug:
+    var: azureenv
+  tags: debugvars
+
